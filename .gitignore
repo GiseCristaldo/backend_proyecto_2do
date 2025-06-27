@@ -1,0 +1,52 @@
+# Directorios de módulos y dependencias
+node_modules/
+dist/
+build/
+
+# Archivos de entorno
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Archivos de logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Directorios de paquetes y caché
+.pnp/
+.pnp.js
+
+# Otros directorios creados por gestores de paquetes
+.yarn/
+.cache/
+
+# Archivos de IDE y editor (ej. VS Code, WebStorm)
+.vscode/
+.idea/
+*.iml
+.DS_Store # Archivos de macOS
+
+# Archivos de prueba y cobertura de test (si los generas)
+coverage/
+
+# Archivos generados por Bundlers / Build tools
+# Si usas Create React App, "build/" ya está incluido, pero no está de más
+# Si usas Vite o Rollup, podría ser "dist/"
+# Si usas Webpack, podría ser "build/" o "dist/"
+# Para el backend, si generas archivos de salida en una carpeta específica, agrégala aquí.
+
+# Archivos de bases de datos locales (si usas SQLite u otra DB local para desarrollo)
+*.sqlite
+*.db
+*.sqlite3
+
+# Archivos de volcado de memoria
+*.dump
+*.gz
+
+# Archivos de datos de sesión (si se almacenan en el disco en el backend)
+sessions/
