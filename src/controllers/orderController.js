@@ -1,41 +1,46 @@
 // src/controllers/OrderController.js
 import { Order, OrderDetail, User, Product } from '../models/index.js'; // Importo todos los modelos que necesito
+import { sequelize } from '../config/database.js';
 
 // Crear una Orden (Checkout)
 export const createOrder = async (req, res) => {
+    // Iniciar una transacción
+    const t = await sequelize.transaction();
+
     try {
-        // req.user.id viene del middleware de autenticación, que asegura que el usuario está logueado
         const userId = req.user.id;
-        const { items } = req.body; // 'items' trae un array de { productId, amount, unitPrice }
+        const { items } = req.body;
 
         if (!items || items.length === 0) {
-            return res.status(400).json({ message: 'El carrito está vacío. No se puede crear una orden sin productos.' });
+            return res.status(400).json({ message: 'El carrito está vacío.' });
         }
 
-        // Calcular el total de la orden
         let total = 0;
-        // Validar stock y calcular subtotal para cada item
+        const productChecks = [];
+
         for (const item of items) {
-            const product = await Product.findByPk(item.productId);
+            productChecks.push(Product.findByPk(item.productId));
+        }
+        const products = await Promise.all(productChecks);
+
+        for (let i = 0; i < items.length; i++) {
+            const product = products[i];
+            const item = items[i];
             if (!product || product.stock < item.amount) {
-                return res.status(400).json({ message: `Stock insuficiente para el producto: ${item.productId}` });
+                await t.rollback(); // Revertir transacción si hay error
+                return res.status(400).json({ message: `Stock insuficiente para el producto: ${product?.name || item.productId}` });
             }
-            // me aseguro de que el unitPrice enviado sea el precio actual del producto en la DB
-            // para evitar manipulaciones de precio desde el frontend.
             item.unitPrice = product.price;
             item.subtotal = item.amount * item.unitPrice;
             total += item.subtotal;
         }
 
-        // 1. Crear la orden principal
         const newOrder = await Order.create({
             userId,
-            date: new Date(), // Usar la fecha actual del servidor
-            state: 'pendiente', // Estado inicial de la orden
+            state: 'pendiente',
             total
-        });
+        }, { transaction: t }); // Pasar la transacción
 
-        // 2. Crear los detalles de la orden
         const orderDetails = items.map(item => ({
             orderId: newOrder.id,
             productId: item.productId,
@@ -44,54 +49,32 @@ export const createOrder = async (req, res) => {
             subtotal: item.subtotal
         }));
 
-        await OrderDetail.bulkCreate(orderDetails); // con este método insertamos todos los detalles de la orden en bloque
+        await OrderDetail.bulkCreate(orderDetails, { transaction: t }); // Pasar la transacción
 
-        // 3. Reducir el stock de los productos
-          console.log('Iniciando reducción de stock'); //prueba para ver si funciona 
         for (const item of items) {
-            try { 
-            const product = await Product.findByPk(item.productId);
-            if (product) {
-                    const oldStock = product.stock;
-                    const newStock = product.stock - item.amount;
-                    console.log(`Producto ID: ${item.productId}, Nombre: ${product.name}`); // prueba
-                    console.log(`Stock anterior: ${oldStock}, Cantidad comprada: ${item.amount}, Nuevo stock esperado: ${newStock}`); // prueba
-
-                    await product.update({ stock: newStock });
-                    console.log(`Stock actualizado para ${product.name}. Nuevo stock: ${product.stock}`); // prueba: Stock después de la actualización
-
-                } else {
-                    console.warn(`WARN: Producto con ID ${item.productId} no encontrado durante la reducción de stock.`); // prueba
-                }
-            } catch (updateError) {
-                console.error(`ERROR: Fallo al actualizar stock para producto ${item.productId}:`, updateError); // prueba 
-            }
+            await Product.decrement('stock', {
+                by: item.amount,
+                where: { id: item.productId },
+                transaction: t // Pasar la transacción
+            });
         }
-        console.log('Reducción de stock finalizada'); // prueba final
-        
 
-        // 4. Simulación de Pasarela de Pago (investigando aún no probada)
-        // Por ahora o se gestionará en el front o la orden queda 'pendiente'.
-        // Si hay una lógica de pago backend: podemos usar esta función consultarlo ******
+        // Si todo fue bien, confirmar la transacción
+        await t.commit();
 
-        // const paymentResult = await processPayment(total, paymentInfo);
-        // if (paymentResult.success) {
-        //     await newOrder.update({ state: 'pagado' });
-        // } else {
-        //     // Manejar fallo de pago, quizás poner estado 'cancelado' o loguear
-        // }
+        res.status(201).json({
+            message: 'Orden creada exitosamente.',
+            order: newOrder
+        });
 
-       res.status(201).json({
-            message: 'Orden creada exitosamente. Estado: Pendiente de pago/confirmación.',
-           order: newOrder,
-            details: orderDetails
-       });
-
-   } catch (error) {
-      console.error('Error al crear la orden:', error);
-     res.status(500).json({ message: 'Error interno del servidor al crear la orden.' });
-   }
+    } catch (error) {
+        // Si algo falló, revertir la transacción
+        await t.rollback();
+        console.error('Error al crear la orden:', error);
+        res.status(500).json({ message: 'Error interno del servidor al crear la orden.' });
+    }
 };
+
 
 // --- Obtener Órdenes del Usuario Logueado (Historial) ---
 export const getUserOrders = async (req, res) => {
@@ -131,27 +114,36 @@ export const getUserOrders = async (req, res) => {
     }
 };
 
-// --- Obtener Todas las Órdenes (Solo Admin) --- (no probado, no tengo front de admin)
+// --- Obtener Todas las Órdenes (Solo Admin) --- VERSIÓN CON PAGINACIÓN
 export const getAllOrders = async (req, res) => {
     try {
-        const orders = await Order.findAll({
+        // 1. Obtener parámetros de paginación de la query
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 10;
+        const offset = (page - 1) * limit;
+
+        // 2. Usar findAndCountAll para obtener órdenes y el conteo total
+        const { count, rows } = await Order.findAndCountAll({
+            limit: limit,
+            offset: offset,
             include: [{
                 model: User,
-                as: 'user', // Alias definido en index.js
-                attributes: ['nombre', 'email'] // atributos del usuario
-            }, {
-                model: OrderDetail,
-                as: 'details',
-                include: [{
-                    model: Product,
-                    as: 'product',
-                    attributes: ['name']
-                }]
+                as: 'user',
+                attributes: ['nombre', 'email']
             }],
             order: [['date', 'DESC']]
         });
 
-        res.json(orders);
+        // 3. Calcular el total de páginas
+        const totalPages = Math.ceil(count / limit);
+
+        // 4. Enviar la respuesta con los datos de paginación
+        res.json({
+            orders: rows,
+            totalItems: count,
+            totalPages: totalPages,
+            currentPage: page,
+        });
 
     } catch (error) {
         console.error('Error al obtener todas las órdenes:', error);

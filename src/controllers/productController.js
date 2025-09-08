@@ -4,42 +4,42 @@ import { Op } from 'sequelize'; // Necesario para operadores de Sequelize como `
 // --- Obtener todos los productos (Público y Admin) ---
 export const getProducts = async (req, res) => {
     try {
-        const { name, category, limit = 10, offset = 0 } = req.query; // Para búsqueda y paginación
+        const { name, category, page= 1 , limit = 10 } = req.query; // Para búsqueda y paginación
+        const offset = (page - 1) * limit; // Cálculo del offset para paginación
         let whereClause = { active: true }; // Por defecto, solo mostrar productos activos
 
         // Filtrar por nombre o categoría (HU1.3)
         if (name) {
-            whereClause[Op.or] = [
-                { name: { [Op.like]: `%${name}%` } }, // Búsqueda insensible a mayúsculas/minúsculas para nombre
-            ];
+            whereClause.name = { [Op.like]: `%${name}%` };
         }
         if (category) {
-            // 'category' es el ID de la categoría para un filtro exacto
             whereClause.categoryId = category;
         }
 
-        const products = await Product.findAll({
+ // Usamos findAndCountAll para la paginación
+        const { count, rows } = await Product.findAndCountAll({
             where: whereClause,
-            limit: parseInt(limit), // Convertir a entero para paginación
-            offset: parseInt(offset), // Convertir a entero para paginación
-            order: [['name', 'ASC']], // Ordenamiento predeterminado (HU1.1.4)
-            include: [{ // Incluir la categoría para mostrar su nombre
+            limit: parseInt(limit),
+            offset: parseInt(offset),
+            order: [['name', 'ASC']],
+            include: [{
                 model: Category,
                 as: 'category',
                 attributes: ['name']
             }]
         });
 
-        // HU1.1.3: Si no hay stock, esto ya se refleja en la `stock` del objeto producto.
-        // La visualización 'sin stock' se manejaría en el frontend.
+        const totalPages = Math.ceil(count / limit);
 
-        // Manejo de "Sin Resultados" (HU1.3.3)
-        if (products.length === 0 && (name || category)) {
-            return res.status(200).json({ message: 'No se encontraron productos para tu búsqueda o filtros aplicados.' });
-        }
+        res.json({
+            products: rows,
+            totalItems: count,
+            totalPages: totalPages,
+            currentPage: parseInt(page),
+        });
 
-        res.json(products);
     } catch (error) {
+
         console.error('Error al obtener los productos:', error);
         res.status(500).json({ message: 'Error interno del servidor al obtener los productos.' });
     }
@@ -69,22 +69,23 @@ export const getProductById = async (req, res) => {
     }
 };
 
-//Crear un nuevo producto (Solo Admin) (HU4.1) (no probado, no tengo front de admin)
+
+//Crear un nuevo producto (Solo Admin) (HU4.1)
 export const createProduct = async (req, res) => {
     try {
-        const { name, description, price, stock, imagenURL, categoryId } = req.body;
+        // Añadimos ofert y discount
+        const { name, description, price, stock, imagenURL, categoryId, ofert, discount } = req.body;
 
-        // Validaciones básicas (HU4.1.3)
+        // Validaciones básicas
         if (!name || !description || !price || stock === undefined || !imagenURL || !categoryId) {
             return res.status(400).json({ message: 'Todos los campos (nombre, descripción, precio, stock, imageURL, categoryId) son obligatorios.' });
         }
         if (price <= 0 || stock < 0) {
             return res.status(400).json({ message: 'Precio debe ser mayor a 0 y stock no puede ser negativo.' });
         }
-        if (descuento < 0 || descuento > 100) {
+        if (discount !== undefined && (discount < 0 || discount > 100)) {
             return res.status(400).json({ message: 'El descuento debe ser un valor entre 0 y 100.' });
         }
-        // Verificar si la categoría existe (opcional, pero buena práctica)
         const categoryExists = await Category.findByPk(categoryId);
         if (!categoryExists) {
             return res.status(400).json({ message: 'La categoría especificada no existe.' });
@@ -97,12 +98,12 @@ export const createProduct = async (req, res) => {
             stock,
             imagenURL,
             categoryId,
-            active: true, // Por defecto activo al crearlo (HU4.1.5)
-            ofert,
-            discount
+            active: true,
+            ofert: ofert || false,
+            discount: discount || 0
         });
 
-        res.status(201).json({ message: 'Producto creado exitosamente.', product: newProduct }); // HU4.1.6
+        res.status(201).json({ message: 'Producto creado exitosamente.', product: newProduct });
 
     } catch (error) {
         console.error('Error al crear el producto:', error);
@@ -110,19 +111,18 @@ export const createProduct = async (req, res) => {
     }
 };
 
-// Actualizar un producto existente (Solo Admin) (HU4.1) (no probado, no tengo front de admin)
+// Actualizar un producto existente (Solo Admin) (HU4.1)
 export const updateProduct = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, description, price, stock, imagenURL, categoryId, active } = req.body;
+        const { price, stock, discount, categoryId } = req.body;
 
         const product = await Product.findByPk(id);
-
         if (!product) {
             return res.status(404).json({ message: 'Producto no encontrado.' });
         }
 
-        // Validaciones para los campos actualizados (HU4.1.4)
+        // Validaciones específicas antes de actualizar
         if (price !== undefined && price <= 0) {
             return res.status(400).json({ message: 'Precio debe ser mayor a 0.' });
         }
@@ -139,24 +139,18 @@ export const updateProduct = async (req, res) => {
             }
         }
 
-        // Actualizar solo los campos que se proporcionen en el body
-        await product.update({
-            name: name !== undefined ? name : product.name,
-            description: description !== undefined ? description : product.description,
-            price: price !== undefined ? price : product.price,
-            stock: stock !== undefined ? stock : product.stock,
-            imagenURL: imagenURL !== undefined ? imagenURL : product.imagenURL,
-            categoryId: categoryId !== undefined ? categoryId : product.categoryId,
-            active: active !== undefined ? active : product.active, // Permite activar/desactivar (eliminación lógica)
-        });
+        // Actualizamos el producto con los nuevos valores.
+        // El método update solo modifica los campos que vienen en el objeto.
+        await product.update(req.body);
 
-        res.json({ message: 'Producto actualizado exitosamente.', product }); // HU4.1.6
+        res.json({ message: 'Producto actualizado exitosamente.', product });
 
     } catch (error) {
         console.error('Error al actualizar el producto:', error);
         res.status(500).json({ message: 'Error interno del servidor al actualizar el producto.' });
     }
 };
+
 
 //Eliminar lógicamente un producto (Solo Admin) (HU4.1)(no probado, no tengo front de admin)
 export const deleteProduct = async (req, res) => {
@@ -178,4 +172,4 @@ export const deleteProduct = async (req, res) => {
         console.error('Error al eliminar el producto:', error);
         res.status(500).json({ message: 'Error interno del servidor al eliminar el producto.' });
     }
-};
+}

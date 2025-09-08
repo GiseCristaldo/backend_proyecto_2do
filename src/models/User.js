@@ -21,7 +21,7 @@ export const User = sequelize.define('User', {
         }
     },
     password: {
-        type: DataTypes.STRING, // Aquí se almacenará el hash de la contraseña
+        type: DataTypes.STRING(100), // Aquí se almacenará el hash de la contraseña
         allowNull: false
     },
     rol: {

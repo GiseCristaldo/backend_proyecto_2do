@@ -110,21 +110,86 @@ export const loginUser = async (req, res) => {
 // VER TODOS LOS USUARIOS (Solo admin) (no probado, no tengo front de admin)
 export const getAllUsers = async (req, res) => {
   try {
-    const users = await User.findAll({
-      attributes: { exclude: ['password'] }, // No mostrar password hasheada
-       order: [['date_register', 'DESC']] 
-        });
-        
-        //Manejo de "Sin Usuarios"
-        if (users.length === 0) {
-            return res.status(200).json({ message: 'No hay usuarios registrados aún.' }); // 200 OK porque no es un error, solo que no hay datos
-        }
-      res.json(users);
-    } catch (error) {
-        console.error('Error al obtener los usuarios:', error);
-        res.status(500).json({ message: 'Error interno del servidor al obtener los usuarios.' });
-    } 
+    // 1. Obtener parámetros de paginación de la query string (ej: /admin/users?page=1&limit=10)
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const offset = (page - 1) * limit;
+
+    // 2. Usar findAndCountAll para obtener usuarios y el conteo total
+    const { count, rows } = await User.findAndCountAll({
+      attributes: { exclude: ['password'] }, // Excluimos la contraseña
+      order: [['date_register', 'DESC']],
+      limit: limit,
+      offset: offset,
+    });
+
+    // 3. Calcular el total de páginas
+    const totalPages = Math.ceil(count / limit);
+
+    // 4. Enviar la respuesta con los datos de paginación
+    res.status(200).json({
+      users: rows,
+      totalItems: count,
+      totalPages: totalPages,
+      currentPage: page,
+    });
+
+  } catch (error) {
+    console.error('Error al obtener usuarios:', error);
+    res.status(500).json({ message: 'Error al obtener los usuarios' });
+  }
 };
+// 5. Edita un usuario (solo admin)
+export const updateUser = async (req, res) => {
+  try {
+    const {id}  = req.params; // ID del usuario a editar
+    const { nombre, email, rol } = req.body; // Datos a actualizar
+
+    // Validar que el usuario exista
+    const user = await User.findByPk(id);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuario no encontrado.' });
+    }
+
+    // Actualizar los campos
+    user.nombre = nombre || user.nombre;
+    user.email = email || user.email;
+    user.rol = rol || user.rol;
+
+        await user.save();
+
+    // Devolver el usuario actualizado (sin la contraseña)
+        const userResponse = user.toJSON();
+        delete userResponse.password;
+
+        res.status(200).json({ message: 'Usuario actualizado correctamente', user: userResponse });
+
+  } catch (error) {
+    console.error('Error al actualizar usuario:', error);
+    res.status(500).json({ message: 'Error interno del servidor al actualizar usuario' });
+  }
+};
+// 6. Elimina un usuario (solo admin)
+export const deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params; // ID del usuario a eliminar
+
+    // Validar que el usuario exista
+    const user = await User.findByPk(id);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuario no encontrado.' });
+    }
+
+    // Eliminar el usuario
+    await user.destroy();
+
+    res.status(200).json({ message: 'Usuario eliminado correctamente.' });
+  } catch (error) {
+    console.error('Error al eliminar usuario:', error);
+    res.status(500).json({ message: 'Error interno del servidor al eliminar usuario' });
+  }
+};  
+
 // HU2.2 y parte de la protección de rutas
 export const getLoggedUser = async (req, res) => {
     try {

@@ -6,6 +6,8 @@ import {
   loginUser,
   getLoggedUser,
   getAllUsers,
+  updateUser,
+  deleteUser
 } from '../controllers/userController.js';
 
 // Importa los middlewares 
@@ -23,5 +25,11 @@ router.get('/me', verifyToken, getLoggedUser); // Necesita un token válido
 
 // Obtener todos los usuarios (protegida por token Y rol de administrador)
 router.get('/admin/users', verifyToken, isAdmin, getAllUsers); // Necesita token válido Y rol 'admin'
+
+// Editar un usuario (protegida por token Y rol de administrador)
+router.put('/admin/users/:id', verifyToken, isAdmin, updateUser); // Necesita token válido Y rol 'admin'
+
+// Eliminar un usuario (protegida por token Y rol de administrador)
+router.delete('/admin/users/:id', verifyToken, isAdmin, deleteUser); // Necesita token válido Y rol 'admin' 
 
 export default router;
