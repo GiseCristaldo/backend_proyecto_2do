@@ -19,9 +19,9 @@ export const Product = sequelize.define('Product', {
         allowNull: false
     },
     imagenURL: {
-        type: DataTypes.STRING,
-        allowNull: false
-    },
+    type: DataTypes.TEXT, // TEXT puede almacenar textos muy largos, como un Base64
+    allowNull: false,
+  },
     categoryId: {
         type: DataTypes.INTEGER,
         allowNull: false,

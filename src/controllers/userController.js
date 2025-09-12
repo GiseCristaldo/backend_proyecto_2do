@@ -118,7 +118,7 @@ export const getAllUsers = async (req, res) => {
     // 2. Usar findAndCountAll para obtener usuarios y el conteo total
     const { count, rows } = await User.findAndCountAll({
       attributes: { exclude: ['password'] }, // Excluimos la contraseña
-      order: [['date_register', 'DESC']],
+      order: [['date_register', 'ASC']],
       limit: limit,
       offset: offset,
     });

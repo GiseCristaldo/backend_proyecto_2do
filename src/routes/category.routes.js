@@ -13,10 +13,9 @@ const router = Router();
 router.get('/', getCategories);
 // Obtener categoría por ID
 router.get('/:id', getCategoriesById);
-router.post('/', createCategory);
-    // Crear una nueva categoría
-  // Rutas protegidas para administradores (CRUD de categorías)(no probado porque no tengo front de admin)
-    router.post('/', verifyToken, isAdmin, createCategory);    // Crear una nueva categoría (Admin)
-    router.put('/:id', verifyToken, isAdmin, updateCategory); 
+
+// Rutas protegidas para administradores (CRUD de categorías)
+router.post('/', verifyToken, isAdmin, createCategory);    // Crear una nueva categoría (Admin)
+router.put('/:id', verifyToken, isAdmin, updateCategory);  // Actualizar una categoría (Admin)
 
 export default router;

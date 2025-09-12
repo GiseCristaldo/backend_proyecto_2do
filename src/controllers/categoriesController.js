@@ -33,11 +33,19 @@ export const getCategoriesById = async (req, res) => {
   export const createCategory = async (req, res) => {
     try {
         const { name, imagenURL } = req.body;
-        const newCategory = await Category.create({ name, imagenURL });
+        
+        // Si no se proporciona imagenURL, usar una URL por defecto
+        const imageUrl = imagenURL || 'https://via.placeholder.com/200x200?text=Categoria';
+        
+        const newCategory = await Category.create({ 
+          name, 
+          imagenURL: imageUrl 
+        });
+        
         res.status(201).json(newCategory);
     } catch (error) {
         console.error('Error al crear la categoría:', error);
-        res.status(500).json({ message: 'Error al crear la categoría' });
+        res.status(500).json({ message: 'Error al crear la categoría', error: error.message });
     }
   };
 

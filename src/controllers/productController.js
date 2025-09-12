@@ -114,15 +114,18 @@ export const createProduct = async (req, res) => {
 // Actualizar un producto existente (Solo Admin) (HU4.1)
 export const updateProduct = async (req, res) => {
     try {
-        const { id } = req.params;
-        const { price, stock, discount, categoryId } = req.body;
+         const { id } = req.params;
+        
+        // --- CORRECCIÓN ---
+        // 1. Desestructuramos explícitamente TODOS los campos que esperamos del body.
+        const { name, description, price, stock, imagenURL, categoryId, active, ofert, discount } = req.body;
 
         const product = await Product.findByPk(id);
         if (!product) {
             return res.status(404).json({ message: 'Producto no encontrado.' });
         }
 
-        // Validaciones específicas antes de actualizar
+        // (Las validaciones existentes están bien y pueden quedarse)
         if (price !== undefined && price <= 0) {
             return res.status(400).json({ message: 'Precio debe ser mayor a 0.' });
         }
@@ -139,9 +142,22 @@ export const updateProduct = async (req, res) => {
             }
         }
 
-        // Actualizamos el producto con los nuevos valores.
-        // El método update solo modifica los campos que vienen en el objeto.
-        await product.update(req.body);
+        // 2. Creamos un objeto 'updateData' solo con los campos que nos interesan.
+        //    Esto evita que cualquier campo extra en req.body cause problemas.
+        const updateData = {
+            name,
+            description,
+            price,
+            stock,
+            imagenURL,
+            categoryId,
+            active,
+            ofert,
+            discount
+        };
+
+        // 3. Usamos este objeto limpio y seguro para la actualización.
+        await product.update(updateData);
 
         res.json({ message: 'Producto actualizado exitosamente.', product });
 
@@ -149,6 +165,7 @@ export const updateProduct = async (req, res) => {
         console.error('Error al actualizar el producto:', error);
         res.status(500).json({ message: 'Error interno del servidor al actualizar el producto.' });
     }
+
 };
 
 
