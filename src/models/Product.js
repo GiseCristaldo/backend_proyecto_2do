@@ -18,9 +18,9 @@ export const Product = sequelize.define('Product', {
         type: DataTypes.INTEGER,
         allowNull: false
     },
-    imagenURL: {
+    imagenPath: {
         type: DataTypes.TEXT, // Cambiado de STRING a TEXT para permitir datos más largos
-        allowNull: false,
+        allowNull: true, // Permitir null para productos sin imagen
     },
     categoryId: {
         type: DataTypes.INTEGER,
