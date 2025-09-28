@@ -2,17 +2,32 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { sequelize } from './config/database.js';
+import helmet from 'helmet';
 
 import categoryRoutes from './routes/category.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import orderRoutes from './routes/order.routes.js';
 import productRoutes from './routes/product.routes.js'; 
+import userRoutes from './routes/user.routes.js'; // <-- NUEVA IMPORTACIÓN
 
 
 dotenv.config();
 
 const app = express();
-app.use(cors());
+
+// Configuración de CORS para permitir solicitudes desde el frontend
+const corsOptions = {
+  origin: 'http://localhost:5173',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+app.use(cors(corsOptions));
+
+// Configuración de encabezados de seguridad
+app.use(helmet({
+  crossOriginOpenerPolicy: { policy: 'same-origin' },
+}));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -22,7 +37,13 @@ app.get('/', (req, res) => {
 
 // --- Uso de las Rutas (Endpoints) ---
 // Define los prefijos de las URLs para cada grupo de rutas
-app.use('/api/users', authRoutes);
+
+// 1. AUTENTICACIÓN (LOGIN, REGISTER, GOOGLE): Prefijo /api/auth
+app.use('/api/auth', authRoutes);
+
+// 2. GESTIÓN DE USUARIOS (ADMIN/CRUD): Prefijo /api/users
+app.use('/api/users', userRoutes); // <-- Montaje del nuevo router
+
 app.use('/api/categories', categoryRoutes);
 app.use('/api/products', productRoutes );
 app.use('/api/orders', orderRoutes);
@@ -49,4 +70,3 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`Server is running bitch: http://localhost:${PORT}`);
 });
-

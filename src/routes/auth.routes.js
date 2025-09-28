@@ -1,35 +1,23 @@
-// src/routes/authRoutes.js
 import express from 'express';
-// Importamos las funciones del controlador de usuarios
 import {
   registerUser,
   loginUser,
-  getLoggedUser,
-  getAllUsers,
-  updateUser,
-  deleteUser
+  googleAuthHandler,
+  getLoggedUser
 } from '../controllers/userController.js';
 
-// Importa los middlewares 
-import { verifyToken, isAdmin } from '../middlewares/authMiddleware.js';
+import { verifyToken } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
 // Rutas de autenticación (no protegidas inicialmente)
-router.post('/register', registerUser); // HU2.1
-router.post('/login', loginUser);       // HU2.2
+router.post('/register', registerUser); 
+router.post('/login', loginUser);       
 
-// Rutas protegidas
-// Obtener información del usuario logueado (protegida por token)
-router.get('/me', verifyToken, getLoggedUser); // Necesita un token válido
+// RUTA CLAVE: /api/auth/google (Resuelve el 404 anterior)
+router.post('/google', googleAuthHandler);
 
-// Obtener todos los usuarios (protegida por token Y rol de administrador)
-router.get('/admin/users', verifyToken, isAdmin, getAllUsers); // Necesita token válido Y rol 'admin'
-
-// Editar un usuario (protegida por token Y rol de administrador)
-router.put('/admin/users/:id', verifyToken, isAdmin, updateUser); // Necesita token válido Y rol 'admin'
-
-// Eliminar un usuario (protegida por token Y rol de administrador)
-router.delete('/admin/users/:id', verifyToken, isAdmin, deleteUser); // Necesita token válido Y rol 'admin' 
+// Ruta protegida para obtener datos del usuario logueado
+router.get('/me', verifyToken, getLoggedUser); 
 
 export default router;

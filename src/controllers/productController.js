@@ -1,14 +1,13 @@
-import { Product, Category } from '../models/index.js'; // Importa los modelos Product y Category desde index.js
-import { Op } from 'sequelize'; // Necesario para operadores de Sequelize como `Op.or` para la búsqueda
+import { Product, Category } from '../models/index.js';
+import { Op } from 'sequelize';
 
-// --- Obtener todos los productos (Público y Admin) ---
+// --- Obtener todos los productos ---
 export const getProducts = async (req, res) => {
     try {
-        const { name, category, page= 1 , limit = 10 } = req.query; // Para búsqueda y paginación
-        const offset = (page - 1) * limit; // Cálculo del offset para paginación
-        let whereClause = { active: true }; // Por defecto, solo mostrar productos activos
+        const { name, category, page = 1, limit = 10 } = req.query;
+        const offset = (page - 1) * limit;
+        let whereClause = { active: true };
 
-        // Filtrar por nombre o categoría (HU1.3)
         if (name) {
             whereClause.name = { [Op.like]: `%${name}%` };
         }
@@ -16,7 +15,6 @@ export const getProducts = async (req, res) => {
             whereClause.categoryId = category;
         }
 
- // Usamos findAndCountAll para la paginación
         const { count, rows } = await Product.findAndCountAll({
             where: whereClause,
             limit: parseInt(limit),
@@ -29,56 +27,80 @@ export const getProducts = async (req, res) => {
             }]
         });
 
+        // Formatear las rutas de imagen para la respuesta paginada
+        const productsWithFormattedImages = rows.map(product => {
+            const productJson = product.toJSON();
+            // Lógica para construir la URL completa de la imagen
+            productJson.imagenPath = product.imagenPath
+                ? `http://localhost:3001/${product.imagenPath}`
+                : 'https://placehold.co/400x200/4a4a4a/f0f0f0?text=No+Image';
+            return productJson;
+        });
+
         const totalPages = Math.ceil(count / limit);
 
         res.json({
-            products: rows,
+            products: productsWithFormattedImages,
             totalItems: count,
             totalPages: totalPages,
             currentPage: parseInt(page),
         });
 
     } catch (error) {
-
         console.error('Error al obtener los productos:', error);
         res.status(500).json({ message: 'Error interno del servidor al obtener los productos.' });
     }
 };
 
-// Obtener Detalle de un Producto por ID (Público y Admin) (HU1.2)
+// --- Obtener Detalle de un Producto por ID ---
 export const getProductById = async (req, res) => {
     try {
         const { id } = req.params;
         const product = await Product.findByPk(id, {
-            include: [{ // Incluir la categoría para mostrar su nombre en el detalle
+            include: [{
                 model: Category,
                 as: 'category',
                 attributes: ['name']
             }]
         });
 
-        // HU1.2.3: Manejo de Producto No Encontrado
-        if (!product || !product.active) { // También verifica si está activo para el público
+        if (!product || !product.active) {
             return res.status(404).json({ message: 'Producto no encontrado o no disponible.' });
         }
 
-        res.json(product);
+        const productResponse = product.toJSON();
+
+        // Construir la URL completa de la imagen para el frontend
+        productResponse.imagenPath = product.imagenPath
+            ? `http://localhost:3001/${product.imagenPath}`
+            : 'https://placehold.co/400x400/4a4a4a/f0f0f0?text=No+Image';
+        
+        // Formatear el precio
+        productResponse.price = parseFloat(product.price).toLocaleString('es-AR', {
+            style: 'currency',
+            currency: 'ARS',
+            minimumFractionDigits: 2
+        });
+
+        // Eliminar el campo 'imagenURL' si aún existe para evitar confusiones
+        delete productResponse.imagenURL;
+
+        res.json(productResponse);
+
     } catch (error) {
         console.error('Error al obtener el producto por ID:', error);
         res.status(500).json({ message: 'Error interno del servidor al obtener el producto.' });
     }
 };
 
-
-//Crear un nuevo producto (Solo Admin) (HU4.1)
+// --- Crear un nuevo producto ---
 export const createProduct = async (req, res) => {
     try {
-        // Añadimos ofert y discount
-        const { name, description, price, stock, imagenURL, categoryId, ofert, discount } = req.body;
+        const { name, description, price, stock, categoryId, offer, discount } = req.body;
+        const imagenPath = req.file ? req.file.path : null;
 
-        // Validaciones básicas
-        if (!name || !description || !price || stock === undefined || !imagenURL || !categoryId) {
-            return res.status(400).json({ message: 'Todos los campos (nombre, descripción, precio, stock, imageURL, categoryId) son obligatorios.' });
+        if (!name || !description || !price || stock === undefined || !categoryId) {
+            return res.status(400).json({ message: 'Todos los campos (nombre, descripción, precio, stock, categoryId) son obligatorios.' });
         }
         if (price <= 0 || stock < 0) {
             return res.status(400).json({ message: 'Precio debe ser mayor a 0 y stock no puede ser negativo.' });
@@ -86,6 +108,7 @@ export const createProduct = async (req, res) => {
         if (discount !== undefined && (discount < 0 || discount > 100)) {
             return res.status(400).json({ message: 'El descuento debe ser un valor entre 0 y 100.' });
         }
+
         const categoryExists = await Category.findByPk(categoryId);
         if (!categoryExists) {
             return res.status(400).json({ message: 'La categoría especificada no existe.' });
@@ -96,10 +119,10 @@ export const createProduct = async (req, res) => {
             description,
             price,
             stock,
-            imagenURL,
+            imagenPath, // Ahora se usa el path de la imagen
             categoryId,
             active: true,
-            ofert: ofert || false,
+            offer: offer || false,
             discount: discount || 0
         });
 
@@ -111,65 +134,42 @@ export const createProduct = async (req, res) => {
     }
 };
 
-// Actualizar un producto existente (Solo Admin) (HU4.1)
+// --- Actualizar un producto existente ---
 export const updateProduct = async (req, res) => {
     try {
-         const { id } = req.params;
+        const { id } = req.params;
+        const { name, description, price, stock, categoryId, active, offer, discount } = req.body;
         
-        // --- CORRECCIÓN ---
-        // 1. Desestructuramos explícitamente TODOS los campos que esperamos del body.
-        const { name, description, price, stock, imagenURL, categoryId, active, ofert, discount } = req.body;
-
         const product = await Product.findByPk(id);
         if (!product) {
             return res.status(404).json({ message: 'Producto no encontrado.' });
         }
 
-        // (Las validaciones existentes están bien y pueden quedarse)
-        if (price !== undefined && price <= 0) {
-            return res.status(400).json({ message: 'Precio debe ser mayor a 0.' });
-        }
-        if (stock !== undefined && stock < 0) {
-            return res.status(400).json({ message: 'Stock no puede ser negativo.' });
-        }
-        if (discount !== undefined && (discount < 0 || discount > 100)) {
-            return res.status(400).json({ message: 'El descuento debe ser un valor entre 0 y 100.' });
-        }
-        if (categoryId !== undefined) {
-            const categoryExists = await Category.findByPk(categoryId);
-            if (!categoryExists) {
-                return res.status(400).json({ message: 'La categoría especificada no existe.' });
-            }
-        }
+        // Si se subió un nuevo archivo, usar su path; si no, mantener el path existente.
+        const imagenPath = req.file ? req.file.path : product.imagenPath;
 
-        // 2. Creamos un objeto 'updateData' solo con los campos que nos interesan.
-        //    Esto evita que cualquier campo extra en req.body cause problemas.
         const updateData = {
             name,
             description,
             price,
             stock,
-            imagenURL,
             categoryId,
             active,
-            ofert,
-            discount
+            offer,
+            discount,
+            imagenPath,
         };
 
-        // 3. Usamos este objeto limpio y seguro para la actualización.
         await product.update(updateData);
 
         res.json({ message: 'Producto actualizado exitosamente.', product });
-
     } catch (error) {
         console.error('Error al actualizar el producto:', error);
         res.status(500).json({ message: 'Error interno del servidor al actualizar el producto.' });
     }
-
 };
 
-
-//Eliminar lógicamente un producto (Solo Admin) (HU4.1)(no probado, no tengo front de admin)
+// --- Eliminar lógicamente un producto ---
 export const deleteProduct = async (req, res) => {
     try {
         const { id } = req.params;
@@ -180,13 +180,11 @@ export const deleteProduct = async (req, res) => {
             return res.status(404).json({ message: 'Producto no encontrado.' });
         }
 
-        // HU4.1.5: Eliminación lógica (cambiar 'active' a false)
         await product.update({ active: false });
 
-        res.status(200).json({ message: 'Producto eliminado lógicamente (desactivado) exitosamente.' }); // HU4.1.6
-
+        res.status(200).json({ message: 'Producto eliminado lógicamente (desactivado) exitosamente.' });
     } catch (error) {
         console.error('Error al eliminar el producto:', error);
         res.status(500).json({ message: 'Error interno del servidor al eliminar el producto.' });
     }
-}
+};

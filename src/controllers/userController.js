@@ -1,44 +1,97 @@
-// src/controllers/userController.js
 import { User } from '../models/index.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
-//REGISTRO de usuario - siempre cliente
+// =================================================================================
+// CÓDIGO NECESARIO PARA EL MUNDO REAL (BACKEND)
+// Necesitas: npm install google-auth-library
+import { OAuth2Client } from 'google-auth-library'; 
+// =================================================================================
+
+
+// REGISTRO de usuario - siempre cliente
 export const registerUser = async (req, res) => {
   const { nombre, email, password } = req.body;
-
+// ... (código registerUser)
   try {
-     // 1. Validar campos requeridos
+     // 1. Validate required fields (REQUISITO: Clear error messages)
         if (!nombre || !email || !password) {
             return res.status(400).json({ message: 'Todos los campos (nombre, email, password) son obligatorios.' });
         }
-    // Verificar si el email ya existe
-    const existingUser = await User.findOne({ where: { email } });
+        
+    // Trim whitespace from email
+    const trimmedEmail = email.trim();
+
+    // --- SIMPLIFIED EMAIL FORMAT VALIDATION (REQUISITO: Valid email format) ---
+    const atIndex = trimmedEmail.indexOf('@');
+    const dotIndex = trimmedEmail.lastIndexOf('.');
+
+    // 1. Must contain an '@'
+    if (atIndex === -1) {
+      return res.status(400).json({ message: 'El email debe contener el símbolo @.' });
+    }
+
+    // 2. Must contain a '.' after the '@' and cannot end with '.'
+    if (dotIndex < atIndex || dotIndex === -1 || dotIndex === trimmedEmail.length - 1) {
+      return res.status(400).json({ message: 'El email debe tener un dominio válido (ej. ".com", ".net").' });
+    }
+
+    // 3. Local part (before @) and domain part (between @ and .) cannot be empty
+    if (atIndex === 0 || dotIndex - atIndex <= 1) {
+       return res.status(400).json({ message: 'El email no tiene un formato válido (partes faltantes).' });
+    }
+    // --- END OF SIMPLIFIED EMAIL VALIDATION ---
+
+    // Check if email already exists (REQUISITO: Clear error cases)
+    const existingUser = await User.findOne({ where: { email: trimmedEmail } });
     if (existingUser) {
       return res.status(400).json({ message: 'Este email ya está registrado.' });
     }
 
-    // Hashear contraseña
-        // ¿Qué es 'salt'?
-        // 'Salt' (sal en español) es una cadena de datos aleatorios que se añade a una contraseña antes de que sea hasheada.
-        // Su propósito principal es mejorar la seguridad del proceso de hashing de contraseñas.
-        // Si dos usuarios tienen la misma contraseña (ej. "123456"), sin 'salt', el hash resultante sería idéntico.
-        // Esto permitiría ataques de "rainbow table" (tablas precalculadas de hashes).
-        // Al usar un 'salt' único y aleatorio para cada contraseña, incluso si dos usuarios eligen la misma contraseña,
-        // sus hashes resultantes serán completamente diferentes porque se combinan con un 'salt' distinto.
-        // `bcrypt.genSalt(10)` genera un 'salt' con un costo de trabajo (work factor) de 10.
-        // Un costo de trabajo más alto significa que el proceso de hashing es más lento y, por lo tanto,
-        // más resistente a ataques de fuerza bruta, pero también consume más recursos del servidor.
-        const salt = await bcrypt.genSalt(10); // Generamos una "sal" única y aleatoria
-        const hashedPassword = await bcrypt.hash(password, salt); // Hashea la contraseña combinándola con la sal
+
+    // --- SIMPLIFIED PASSWORD SECURITY VALIDATION (REQUISITO: Minimum security criteria) ---
+    
+    // 1. Minimum length (8 characters)
+    if (password.length < 8) {
+      return res.status(400).json({ message: 'La contraseña debe tener al menos 8 caracteres.' });
+    }
+
+    // 2. Uppercase (at least one)
+    if (!/[A-Z]/.test(password)) {
+      return res.status(400).json({ message: 'La contraseña debe incluir al menos una mayúscula.' });
+    }
+
+    // 3. Number (at least one)
+    if (!/\d/.test(password)) {
+      return res.status(400).json({ message: 'La contraseña debe incluir al menos un número.' });
+    }
+
+    // 4. Special character (at least one of the required ones)
+    const specialCharRegex = /[@$!%*?&]/;
+    if (!specialCharRegex.test(password)) {
+      return res.status(400).json({ message: 'La contraseña debe incluir al menos un carácter especial (@, $, !, %, *, ?, o &).' });
+    }
+    
+    // --- END OF SIMPLIFIED PASSWORD VALIDATION ---
 
 
-    // Crear usuario con rol por defecto 'cliente'
+    // Validate password confirmation (REQUISITO: Password must match)
+    if (password !== req.body.confirmPassword) {
+      return res.status(400).json({ message: 'Las contraseñas no coinciden.' });
+    }
+
+    // Hash password (REQUISITO: Encrypted passwords / Security)
+        const salt = await bcrypt.genSalt(10); 
+        const hashedPassword = await bcrypt.hash(password, salt); 
+
+
+    // Crear usuario con rol por defecto 'cliente' (REQUISITO: Persistencia)
     const newUser = await User.create({
       nombre,
       email,
       password: hashedPassword,
-      rol: 'cliente'
+      rol: 'cliente',
+      loginMethod: 'local'
     });
 
     res.status(201).json({ message: 'Usuario registrado correctamente',
@@ -56,13 +109,111 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// LOGIN admin o cliente
+// ALTERNATIVE LOGIN WITH GOOGLE (REQUISITO: Google login support)
+export const googleAuthHandler = async (req, res) => { 
+    const { idToken } = req.body;
+
+    // 1. Validate required token
+    if (!idToken) {
+        return res.status(400).json({ message: 'El token de Google es obligatorio.' });
+    }
+
+    try {
+        let userData;
+        
+        // 1. CLAVE DE AUDIENCIA: Usamos la variable de backend
+        const CLIENT_ID_AUDIENCE = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID;
+        
+        // Inicializa el cliente con la clave
+        const client = new OAuth2Client(CLIENT_ID_AUDIENCE); 
+
+        // DEBUG: Muestra la clave que Node está leyendo (CRÍTICO)
+        console.log("DEBUG BACKEND CLIENT_ID used for Audience:", CLIENT_ID_AUDIENCE); 
+        
+        // =========================================================================
+        // ✅ CÓDIGO DE VERIFICACIÓN REAL
+        // -------------------------------------------------------------------------
+        
+        try {
+            if (!CLIENT_ID_AUDIENCE) {
+                // Mensaje de error más claro
+                throw new Error('GOOGLE_CLIENT_ID no está configurada correctamente en el backend (revisa tu .env).'); 
+            }
+            
+            // Llama a la API de Google para verificar el token
+            const ticket = await client.verifyIdToken({
+                idToken: idToken,
+                audience: CLIENT_ID_AUDIENCE, // Asegura que el token sea para tu app
+            });
+            // Obtiene los datos del payload verificado
+            const payload = ticket.getPayload();
+            
+            userData = {
+                email: payload.email,
+                name: payload.name
+            };
+
+        } catch (error) {
+            console.error('Error verificando token de Google:', error.message);
+            
+            // Devuelve error 401 si Google reporta un token inválido
+            return res.status(401).json({ message: 'Token de Google inválido o caducado.' });
+        }
+        
+        // =========================================================================
+        
+        const email = userData.email.trim();
+        const nombre = userData.name;
+
+        // 2. Busca al usuario en la base de datos
+        let user = await User.findOne({ where: { email } });
+
+        if (!user) {
+            // 3. Si el usuario no existe, crea la cuenta (primer login)
+            const tempHashedPassword = bcrypt.hashSync(email, 10); 
+            
+            user = await User.create({
+                nombre: nombre,
+                email: email,
+                password: tempHashedPassword, 
+                rol: 'cliente', 
+                loginMethod: 'google' 
+            });
+        }
+        
+        // 4. Genera el token JWT local (para mantener la sesión en la API)
+        const token = jwt.sign(
+            { user: { id: user.id, rol: user.rol } },
+            process.env.JWT_SECRET,
+            { expiresIn: '2h' }
+        );
+
+        // 5. Devuelve el éxito
+        res.json({
+            message: 'Login con Google exitoso',
+            token,
+            user: {
+                id: user.id,
+                nombre: user.nombre,
+                email: user.email,
+                rol: user.rol
+            }
+        });
+
+    } catch (error) {
+        console.error('Error en el login con Google:', error);
+        res.status(500).json({ message: 'Error interno del servidor al procesar el login con Google.' });
+    }
+};
+
+// LOGIN admin or client
 export const loginUser = async (req, res) => {
 
   try {
     const { email, password } = req.body;
 
-        // Validar campos requeridos
+// ... (código loginUser)
+    // Validar campos requeridos
         if (!email || !password) {
             return res.status(400).json({ message: 'Email y contraseña son obligatorios.' });
         }
@@ -70,21 +221,23 @@ export const loginUser = async (req, res) => {
     const user = await User.findOne({ where: { email } });
 
    if (!user) {
+            // REQUISITO: Clear and consistent error messages for invalid credentials
             return res.status(401).json({ message: 'Credenciales inválidas (email o contraseña incorrectos).' });
         }
+        
+    // --- GOOGLE ACCOUNT HANDLING: PREVENT LOCAL LOGIN ---  
+    // Si la cuenta fue creada con Google, debe usar el botón de Google.
+    if (user.loginMethod === 'google') {
+        return res.status(403).json({ 
+            message: 'Esta cuenta fue registrada usando Google. Por favor, utiliza el botón "Iniciar sesión con Google".'
+        });
+    }
+    // --------------------------------------------------------
 
     const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) return res.status(401).json({ message: 'Contraseña incorrecta' });
+    if (!validPassword) return res.status(401).json({ message: 'Credenciales inválidas (email o contraseña incorrectos).' }); // Unified message
 
     // Generar token JWT
-    //Un JWT (JSON Web Token) es un token de acceso seguro que: Identifica al usuario que se ha logueado.
-   //Permite acceder a rutas protegidas (como hacer pedidos o ver el carrito).
-   //Es generado por el backend y enviado al frontend, que lo guarda en localStorage o sessionStorage.
-   //para esto estoy usando la librería jsonwebtoken (jwt).
-    //El token contiene información del usuario (como su ID y rol) y está firmado con un secreto (JWT_SECRET).
-    //El token tiene una fecha de expiración (en este caso, 2 horas)
-
-
     const token = jwt.sign(
       { user:{ id: user.id, rol: user.rol } },
       process.env.JWT_SECRET,
@@ -107,26 +260,46 @@ export const loginUser = async (req, res) => {
   }
 };
 
-// VER TODOS LOS USUARIOS (Solo admin) (no probado, no tengo front de admin)
+// OBTENER USUARIO LOGUEADO
+export const getLoggedUser = async (req, res) => {
+    try {
+        const userId = req.user.id; 
+
+        const user = await User.findByPk(userId, {
+            attributes: ['id', 'nombre', 'email', 'rol'],
+        });
+
+        if (!user) {
+            return res.status(404).json({ message: 'Usuario no encontrado.' });
+        }
+
+        res.json({ user });
+    } catch (error) {
+        console.error('Error al obtener datos del usuario:', error);
+        res.status(500).json({ message: 'Error interno del servidor.' });
+    }
+};
+
+// GET ALL USERS (Admin only) 
 export const getAllUsers = async (req, res) => {
   try {
-    // 1. Obtener parámetros de paginación de la query string (ej: /admin/users?page=1&limit=10)
+    // 1. Get pagination parameters from query string (e.g., /admin/users?page=1&limit=10)
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const offset = (page - 1) * limit;
 
-    // 2. Usar findAndCountAll para obtener usuarios y el conteo total
+    // 2. Use findAndCountAll to get users and total count
     const { count, rows } = await User.findAndCountAll({
-      attributes: { exclude: ['password'] }, // Excluimos la contraseña
-      order: [['date_register', 'ASC']],
+      attributes: { exclude: ['password'] }, // Exclude password
+      order: [['date_register', 'DESC']],
       limit: limit,
       offset: offset,
     });
 
-    // 3. Calcular el total de páginas
+    // 3. Calculate total pages
     const totalPages = Math.ceil(count / limit);
 
-    // 4. Enviar la respuesta con los datos de paginación
+    // 4. Send response with pagination data
     res.status(200).json({
       users: rows,
       totalItems: count,
@@ -139,26 +312,26 @@ export const getAllUsers = async (req, res) => {
     res.status(500).json({ message: 'Error al obtener los usuarios' });
   }
 };
-// 5. Edita un usuario (solo admin)
+// 5. Update a user (Admin only)
 export const updateUser = async (req, res) => {
   try {
-    const {id}  = req.params; // ID del usuario a editar
-    const { nombre, email, rol } = req.body; // Datos a actualizar
+    const {id}  = req.params; // ID of the user to edit
+    const { nombre, email, rol } = req.body; // Data to update
 
-    // Validar que el usuario exista
+    // Validate that the user exists
     const user = await User.findByPk(id);
     if (!user) {
       return res.status(404).json({ message: 'Usuario no encontrado.' });
     }
 
-    // Actualizar los campos
+    // Update fields
     user.nombre = nombre || user.nombre;
     user.email = email || user.email;
     user.rol = rol || user.rol;
 
         await user.save();
 
-    // Devolver el usuario actualizado (sin la contraseña)
+    // Return the updated user (without password)
         const userResponse = user.toJSON();
         delete userResponse.password;
 
@@ -169,18 +342,18 @@ export const updateUser = async (req, res) => {
     res.status(500).json({ message: 'Error interno del servidor al actualizar usuario' });
   }
 };
-// 6. Elimina un usuario (solo admin)
+// 6. Delete a user (Admin only)
 export const deleteUser = async (req, res) => {
   try {
-    const { id } = req.params; // ID del usuario a eliminar
+    const { id } = req.params; // ID of the user to delete
 
-    // Validar que el usuario exista
+    // Validate that the user exists
     const user = await User.findByPk(id);
     if (!user) {
       return res.status(404).json({ message: 'Usuario no encontrado.' });
     }
 
-    // Eliminar el usuario
+    // Delete the user
     await user.destroy();
 
     res.status(200).json({ message: 'Usuario eliminado correctamente.' });
@@ -188,25 +361,4 @@ export const deleteUser = async (req, res) => {
     console.error('Error al eliminar usuario:', error);
     res.status(500).json({ message: 'Error interno del servidor al eliminar usuario' });
   }
-};  
-
-// HU2.2 y parte de la protección de rutas
-export const getLoggedUser = async (req, res) => {
-    try {
-        // req.user viene del middleware de autenticación (authMiddleware)
-        // Este middleware adjunta la información decodificada del JWT al objeto req.
-        const user = await User.findByPk(req.user.id, {
-            attributes: { exclude: ['password'] } // No mostrar la contraseña hasheada
-        });
-
-        if (!user) {
-            return res.status(404).json({ message: 'Usuario no encontrado.' });
-        }
-
-        res.json(user);
-
-    } catch (error) {
-        console.error('Error al obtener datos del usuario logueado:', error);
-        res.status(500).json({ message: 'Error interno del servidor al obtener datos del usuario.' });
-    }
 };

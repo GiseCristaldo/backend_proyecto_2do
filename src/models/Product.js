@@ -11,7 +11,7 @@ export const Product = sequelize.define('Product', {
         allowNull: false
     },
     price: {
-        type: DataTypes.FLOAT,
+        type: DataTypes.DECIMAL(10,2),
         allowNull: false
     },
     stock: {
@@ -19,9 +19,9 @@ export const Product = sequelize.define('Product', {
         allowNull: false
     },
     imagenURL: {
-    type: DataTypes.TEXT, // TEXT puede almacenar textos muy largos, como un Base64
-    allowNull: false,
-  },
+        type: DataTypes.TEXT, // Cambiado de STRING a TEXT para permitir datos más largos
+        allowNull: false,
+    },
     categoryId: {
         type: DataTypes.INTEGER,
         allowNull: false,
