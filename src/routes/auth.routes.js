@@ -10,11 +10,9 @@ import { verifyToken } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
-// Rutas de autenticación (no protegidas inicialmente)
+// Rutas de autenticación (no protegidas)
 router.post('/register', registerUser); 
 router.post('/login', loginUser);       
-
-// RUTA CLAVE: /api/auth/google (Resuelve el 404 anterior)
 router.post('/google', googleAuthHandler);
 
 // Ruta protegida para obtener datos del usuario logueado
