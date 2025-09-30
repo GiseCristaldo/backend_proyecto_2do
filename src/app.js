@@ -17,7 +17,9 @@ const app = express();
 
 // Configuración de CORS para permitir solicitudes desde el frontend
 const corsOptions = {
-  origin: 'http://localhost:5173',
+  origin: process.env.NODE_ENV === 'production' 
+    ? ['https://infinity-store-frontend.vercel.app', 'https://*.vercel.app']
+    : 'http://localhost:5173',
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -28,7 +30,25 @@ app.use(cors(corsOptions));
 app.use(helmet({
   crossOriginOpenerPolicy: { policy: 'same-origin' },
   crossOriginResourcePolicy: { policy: 'cross-origin' },
-  crossOriginEmbedderPolicy: false
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https:"],
+      scriptSrc: ["'self'"],
+      connectSrc: ["'self'", "https://accounts.google.com"]
+    }
+  },
+  hsts: {
+    maxAge: 31536000, // 1 año
+    includeSubDomains: true,
+    preload: true
+  },
+  noSniff: true,
+  frameguard: { action: 'deny' },
+  xssFilter: true
 }));
 
 app.use(express.json({ limit: '10mb' }));
@@ -73,6 +93,6 @@ try {
 }
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-    console.log(`Server is running bitch: http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor corriendo en puerto ${PORT}`);
 });

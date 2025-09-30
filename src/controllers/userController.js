@@ -1,26 +1,31 @@
 import { User } from '../models/index.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-
-// =================================================================================
-// CÓDIGO NECESARIO PARA EL MUNDO REAL (BACKEND)
-// Necesitas: npm install google-auth-library
 import { OAuth2Client } from 'google-auth-library'; 
-// =================================================================================
-
 
 // REGISTRO de usuario - siempre cliente
 export const registerUser = async (req, res) => {
   const { nombre, email, password } = req.body;
-// ... (código registerUser)
   try {
-     // 1. Validate required fields (REQUISITO: Clear error messages)
+     // 1. Validate required fields
         if (!nombre || !email || !password) {
             return res.status(400).json({ message: 'Todos los campos (nombre, email, password) son obligatorios.' });
         }
         
     // Trim whitespace from email
     const trimmedEmail = email.trim();
+  
+    if (trimmedEmail.length > 254) {
+    return res.status(400).json({ 
+        message: 'El email no puede exceder los 254 caracteres.' 
+    });
+}
+
+if (trimmedEmail.length < 5) {
+    return res.status(400).json({ 
+        message: 'El email debe tener al menos 5 caracteres.' 
+    });
+}
 
     // --- SIMPLIFIED EMAIL FORMAT VALIDATION (REQUISITO: Valid email format) ---
     const atIndex = trimmedEmail.indexOf('@');
@@ -55,6 +60,13 @@ export const registerUser = async (req, res) => {
     if (password.length < 8) {
       return res.status(400).json({ message: 'La contraseña debe tener al menos 8 caracteres.' });
     }
+    
+    // 2. Maximum length (128 characters)
+    if (password.length > 128) {
+    return res.status(400).json({ 
+        message: 'La contraseña no puede exceder los 128 caracteres.' 
+    });
+}
 
     // 2. Uppercase (at least one)
     if (!/[A-Z]/.test(password)) {
@@ -71,9 +83,6 @@ export const registerUser = async (req, res) => {
     if (!specialCharRegex.test(password)) {
       return res.status(400).json({ message: 'La contraseña debe incluir al menos un carácter especial (@, $, !, %, *, ?, o &).' });
     }
-    
-    // --- END OF SIMPLIFIED PASSWORD VALIDATION ---
-
 
     // Validate password confirmation (REQUISITO: Password must match)
     if (password !== req.body.confirmPassword) {
@@ -185,7 +194,7 @@ export const googleAuthHandler = async (req, res) => {
         const token = jwt.sign(
             { user: { id: user.id, rol: user.rol } },
             process.env.JWT_SECRET,
-            { expiresIn: '2h' }
+            { expiresIn: '2h' } // PRUEBA: Token expira en 2 horas
         );
 
         // 5. Devuelve el éxito
@@ -241,7 +250,7 @@ export const loginUser = async (req, res) => {
     const token = jwt.sign(
       { user:{ id: user.id, rol: user.rol } },
       process.env.JWT_SECRET,
-      { expiresIn: '2h' }
+      { expiresIn: '2h' } // PRUEBA: Token expira en 2 horas
     );
 
     res.json({
